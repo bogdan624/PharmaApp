@@ -35,8 +35,12 @@ public class DashboardForm extends JFrame {
                             "New user: " + user.nume,
                             "Successful Registration",
                             JOptionPane.INFORMATION_MESSAGE);
+                    TableForm tableForm = new TableForm();
                 }
-                TableForm tableForm = new TableForm();
+                else {
+                    System.out.println("Registrare inchisa");
+                    dispose();
+                }
             }
         });
 
@@ -52,8 +56,12 @@ public class DashboardForm extends JFrame {
                             "Welcome: " + user.nume,
                             "Successful Login",
                             JOptionPane.INFORMATION_MESSAGE);
+                    TableForm tableForm = new TableForm();
                 }
-                TableForm tableForm = new TableForm();
+                else {
+                    System.out.println("Autentificare inchisa");
+                    dispose();
+                }
             }
         });
     }
