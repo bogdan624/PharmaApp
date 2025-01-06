@@ -10,6 +10,7 @@ public class TableForm extends JFrame {
     private DefaultTableModel tableModel;
     private JButton btnDelete;
     private JButton btnEdit;
+    private JButton btnAdd; // Butonul de Adăugare
     private JComboBox<String> queryComboBox;
     private String currentTable;
 
@@ -32,8 +33,8 @@ public class TableForm extends JFrame {
         btnSelectTable = new JComboBox<>(new String[]{"client", "medicament", "furnizor", "categorie", "producator", "vanzare", "vanzare_medicament"});
         btnDelete = new JButton("Delete");
         btnEdit = new JButton("Edit");
+        btnAdd = new JButton("Add"); // Inițializarea butonului Adăugare
 
-        // ComboBox pentru query-uri
         queryComboBox = new JComboBox<>(new String[]{
                 "1. Medicamente și furnizori",
                 "2. Clienți și număr vânzări",
@@ -44,12 +45,15 @@ public class TableForm extends JFrame {
                 "7. Top 5 medicamente cu cele mai mari vânzări",
                 "8. Clienți cu peste 3 vânzări într-un an",
                 "9. Furnizori care furnizează mai multe categorii",
-                "10. Vânzări totale per lună pentru ultimul an"
+                "10. Vânzări totale per lună pentru ultimul an",
+                "11. Medicamente cu un preț specific",
+                "12. Clienți care au făcut cumpărături într-o anumită lună"
         });
 
         JPanel bottomPanel = new JPanel(new FlowLayout());
         bottomPanel.add(btnDelete);
         bottomPanel.add(btnEdit);
+        bottomPanel.add(btnAdd); // Adăugarea butonului în interfață
         bottomPanel.add(queryComboBox);
 
         setLayout(new BorderLayout());
@@ -61,17 +65,25 @@ public class TableForm extends JFrame {
             currentTable = (String) btnSelectTable.getSelectedItem();
             if (currentTable != null) {
                 showTable(currentTable);
+                toggleButtons(true); // Activează butoanele
+            }
+        });
+
+        queryComboBox.addActionListener(e -> {
+            int selectedIndex = queryComboBox.getSelectedIndex();
+            if (selectedIndex >= 0) {
+                toggleButtons(false); // Dezactivează butoanele
+                executeSelectedQuery();
             }
         });
 
         btnDelete.addActionListener(e -> deleteSelectedRow());
         btnEdit.addActionListener(e -> editSelectedRow());
+        btnAdd.addActionListener(e -> addNewRow()); // Acțiunea pentru butonul Adăugare
 
-        queryComboBox.addActionListener(e -> executeSelectedQuery());
-
+        toggleButtons(false); // Dezactivează butoanele la inițializare
         setVisible(true);
     }
-
     private void showTable(String tableName) {
         final String DB_URL = "jdbc:mysql://127.0.0.1:3306/farmacie";
         final String USERNAME = "root";
@@ -101,6 +113,58 @@ public class TableForm extends JFrame {
         } catch (SQLException e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this, "Failed to retrieve data", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void addNewRow() {
+        if (currentTable == null) {
+            JOptionPane.showMessageDialog(this, "Selectați un tabel mai întâi!", "Eroare", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        final String DB_URL = "jdbc:mysql://127.0.0.1:3306/farmacie";
+        final String USERNAME = "root";
+        final String PASSWORD = "1234";
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, USERNAME, PASSWORD)) {
+            ResultSet rs = conn.createStatement().executeQuery("SELECT * FROM " + currentTable + " LIMIT 1");
+            ResultSetMetaData metaData = rs.getMetaData();
+            int columnCount = metaData.getColumnCount();
+
+            JPanel inputPanel = new JPanel(new GridLayout(columnCount, 2));
+            JTextField[] inputFields = new JTextField[columnCount];
+            for (int i = 1; i <= columnCount; i++) {
+                inputPanel.add(new JLabel(metaData.getColumnName(i) + ":"));
+                inputFields[i - 1] = new JTextField();
+                inputPanel.add(inputFields[i - 1]);
+            }
+
+            int result = JOptionPane.showConfirmDialog(this, inputPanel, "Introduceți datele", JOptionPane.OK_CANCEL_OPTION);
+            if (result == JOptionPane.OK_OPTION) {
+                StringBuilder sql = new StringBuilder("INSERT INTO " + currentTable + " VALUES (");
+                for (int i = 0; i < columnCount; i++) {
+                    sql.append("?");
+                    if (i < columnCount - 1) sql.append(", ");
+                }
+                sql.append(")");
+
+                try (PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+                    for (int i = 0; i < columnCount; i++) {
+                        pstmt.setString(i + 1, inputFields[i].getText());
+                    }
+
+                    int rowsInserted = pstmt.executeUpdate();
+                    if (rowsInserted > 0) {
+                        JOptionPane.showMessageDialog(this, "Rând adăugat cu succes!");
+                        showTable(currentTable); // Reîncarcă datele din tabel
+                    } else {
+                        JOptionPane.showMessageDialog(this, "Eroare la inserare!", "Eroare", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Database error", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -186,7 +250,7 @@ public class TableForm extends JFrame {
     private void executeSelectedQuery() {
         int selectedQueryIndex = queryComboBox.getSelectedIndex(); // Obține indexul query-ului selectat
         String query = "";
-
+        int query_param = 0;
         switch (selectedQueryIndex) {
             case 0 -> query = """
                 SELECT m.id_medicament, m.nume, f.nume_furnizor
@@ -234,7 +298,7 @@ public class TableForm extends JFrame {
                 FROM client c
                 JOIN vanzare v ON c.id_client = v.id_client
                 GROUP BY c.id_client, c.nume_client, YEAR(v.data_vanzare)
-                HAVING COUNT(v.id_vanzare) > 3;
+                HAVING COUNT(v.id_vanzare) >= 3;
             """;
             case 8 -> query = """
                 SELECT f.id_furnizor, f.nume_furnizor, COUNT(DISTINCT m.id_categorie) AS numar_categorii
@@ -252,15 +316,153 @@ public class TableForm extends JFrame {
                 GROUP BY DATE_FORMAT(v.data_vanzare, '%Y-%m')
                 ORDER BY luna ASC;
             """;
+            case 10 -> { // Medicamente cu un preț specific
+                String priceInput = JOptionPane.showInputDialog(this,
+                        "Introduceți prețul maxim pentru medicamente:",
+                        "Filtrare Medicamente",
+                        JOptionPane.PLAIN_MESSAGE);
+                if (priceInput == null || priceInput.isEmpty()) {
+                    JOptionPane.showMessageDialog(this, "Introduceți un preț valid!", "Eroare", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                try {
+                    double price = Double.parseDouble(priceInput);
+                    query = """
+                    SELECT id_medicament, nume, pret
+                    FROM medicament
+                    WHERE pret <= ?
+                """;
+                    executeQueryWithParameter(query, price);
+                    query_param=1;
+                } catch (NumberFormatException e) {
+                    JOptionPane.showMessageDialog(this, "Introduceți un număr valid pentru preț!", "Eroare", JOptionPane.ERROR_MESSAGE);
+                }
+                return;
+            }
+            case 11 -> {
+                // Creează un panou pentru a obține luna și anul de la utilizator
+                JPanel inputPanel = new JPanel(new GridLayout(2, 2));
+                inputPanel.add(new JLabel("Introduceți anul:"));
+                JTextField yearField = new JTextField();
+                inputPanel.add(yearField);
+
+                inputPanel.add(new JLabel("Introduceți luna (1-12):"));
+                JTextField monthField = new JTextField();
+                inputPanel.add(monthField);
+
+                int result = JOptionPane.showConfirmDialog(this, inputPanel, "Introduceți anul și luna", JOptionPane.OK_CANCEL_OPTION);
+                if (result == JOptionPane.OK_OPTION) {
+                    try {
+                        int year = Integer.parseInt(yearField.getText());
+                        int month = Integer.parseInt(monthField.getText());
+
+                        if (month < 1 || month > 12) {
+                            JOptionPane.showMessageDialog(this, "Introduceți o lună validă între 1 și 12!", "Eroare", JOptionPane.WARNING_MESSAGE);
+                            return;
+                        }
+
+                        query = """
+                        SELECT c.id_client, c.nume_client
+                        FROM client c
+                        JOIN vanzare v ON c.id_client = v.id_client
+                        WHERE YEAR(v.data_vanzare) = ? AND MONTH(v.data_vanzare) = ?
+                        GROUP BY c.id_client, c.nume_client;
+                    """;
+
+                        // Execută interogarea parametrizată cu anul și luna introduse de utilizator
+                        executeParameterizedQuery(query, year, month);
+                        query_param=1;
+                    } catch (NumberFormatException e) {
+                        JOptionPane.showMessageDialog(this, "Introduceți un număr valid pentru an și lună!", "Eroare", JOptionPane.WARNING_MESSAGE);
+                    }
+                }
+            }
+
 
             default -> {
                 JOptionPane.showMessageDialog(this, "Selectați un query valid!", "Eroare", JOptionPane.ERROR_MESSAGE);
                 return;
             }
         }
-
-        executeCustomQuery(query);
+        if(query_param==0)
+            executeCustomQuery(query);
     }
+
+    private void executeQueryWithParameter(String query, double parameter) {
+        final String DB_URL = "jdbc:mysql://127.0.0.1:3306/farmacie";
+        final String USERNAME = "root";
+        final String PASSWORD = "1234";
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, USERNAME, PASSWORD);
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+
+            pstmt.setDouble(1, parameter);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                ResultSetMetaData metaData = rs.getMetaData();
+                int columnCount = metaData.getColumnCount();
+                String[] columnNames = new String[columnCount];
+                for (int i = 1; i <= columnCount; i++) {
+                    columnNames[i - 1] = metaData.getColumnName(i);
+                }
+
+                tableModel.setColumnIdentifiers(columnNames);
+                tableModel.setRowCount(0);
+
+                while (rs.next()) {
+                    Object[] row = new Object[columnCount];
+                    for (int i = 1; i <= columnCount; i++) {
+                        row[i - 1] = rs.getObject(i);
+                    }
+                    tableModel.addRow(row);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Eroare la executarea query-ului", "Eroare", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    private void toggleButtons(boolean enable) {
+        btnDelete.setEnabled(enable);
+        btnEdit.setEnabled(enable);
+        btnAdd.setEnabled(enable);
+    }
+    private void executeParameterizedQuery(String query, int year, int month) {
+        final String DB_URL = "jdbc:mysql://127.0.0.1:3306/farmacie";
+        final String USERNAME = "root";
+        final String PASSWORD = "1234";
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, USERNAME, PASSWORD);
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+
+            pstmt.setInt(1, year);
+            pstmt.setInt(2, month);
+
+            try (ResultSet rs = pstmt.executeQuery()) {
+                ResultSetMetaData metaData = rs.getMetaData();
+                int columnCount = metaData.getColumnCount();
+                String[] columnNames = new String[columnCount];
+                for (int i = 1; i <= columnCount; i++) {
+                    columnNames[i - 1] = metaData.getColumnName(i);
+                }
+
+                tableModel.setColumnIdentifiers(columnNames);
+                tableModel.setRowCount(0);
+
+                while (rs.next()) {
+                    Object[] row = new Object[columnCount];
+                    for (int i = 1; i <= columnCount; i++) {
+                        row[i - 1] = rs.getObject(i);
+                    }
+                    tableModel.addRow(row);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Eroare la executarea query-ului", "Eroare", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
 
     private void executeCustomQuery(String query) {
         final String DB_URL = "jdbc:mysql://127.0.0.1:3306/farmacie";

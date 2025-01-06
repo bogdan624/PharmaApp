@@ -9,11 +9,11 @@ public class Main {
                     "1234"
             );
             Statement statement = connection.createStatement();
-            ResultSet resultSet = statement.executeQuery("SELECT * FROM USERS");
+            ResultSet resultSet = statement.executeQuery("SELECT * FROM client");
 
             while (resultSet.next()) {
-                System.out.println(resultSet.getString("username"));
-                System.out.println(resultSet.getString("password"));
+                System.out.println(resultSet.getString("nume_client"));
+                System.out.println(resultSet.getString("parola_client"));
             }
         }catch(SQLException e){
             e.printStackTrace();
