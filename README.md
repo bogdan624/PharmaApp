@@ -23,7 +23,6 @@ PharmaApp is designed to streamline the management of pharmaceutical information
 - **Prescription Tracking:** Record and manage prescription data.
 - **Database Integration:** Built to interact with a database for persistent storage.
 - **Modular Design:** Easy-to-extend architecture for additional functionalities.
-- *(Add more features as necessary.)*
 
 ## Installation
 
